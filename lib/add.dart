@@ -29,6 +29,8 @@ class _AddState extends State<Add> {
   bool editMode = false;
   var arguments;
   var response;
+  var error = '';
+  Database database;
 
   static const String _baseUrl = "apidojo-yahoo-finance-v1.p.rapidapi.com";
   static const Map<String, String> _headers = {
@@ -97,31 +99,37 @@ class _AddState extends State<Add> {
     var databasesPath = await getDatabasesPath();
     String path = join(databasesPath, 'data.db');
     // await deleteDatabase(path);
-    Database database = await openDatabase(path, version: 1,
-        onCreate: (Database db, int version) async {
-      print("creating");
-      await db.execute(
-          'CREATE TABLE Test (symbol TEXT UNIQUE,name TEXT, quantity FLOAT(7,5), costprice FLOAT(10,3))');
-    });
-    if (editMode) {
-      try {
-        await database.rawUpdate(
-            'UPDATE Test SET name = \'$name\', quantity = $quantity, costprice = $costPrice WHERE symbol = \'$symbol\'');
-      } catch (e) {
-        print("error $e");
-        return false;
+
+    try {
+      database = await openDatabase(path, version: 1,
+          onCreate: (Database db, int version) async {
+        print("creating");
+        await db.execute(
+            'CREATE TABLE Test (symbol TEXT UNIQUE,name TEXT, quantity FLOAT(7,5), costprice FLOAT(10,3))');
+      });
+      if (editMode) {
+        try {
+          await database.rawUpdate(
+              'UPDATE Test SET name = \'$name\', quantity = $quantity, costprice = $costPrice WHERE symbol = \'$symbol\'');
+        } catch (e) {
+          print("error $e");
+          return false;
+        }
+        print("Successfully edited $symbol, $name, $quantity,$costPrice");
+      } else {
+        try {
+          await database.rawInsert(
+              'INSERT INTO Test VALUES (\'$symbol\', \'$name\', $quantity,$costPrice)');
+        } catch (e) {
+          print("error $e");
+          return false;
+        }
+        print("Successfully added $symbol, $name, $quantity,$costPrice");
       }
-      print("Successfully edited $symbol, $name, $quantity,$costPrice");
-    } else {
-      try {
-        await database.rawInsert(
-            'INSERT INTO Test VALUES (\'$symbol\', \'$name\', $quantity,$costPrice)');
-      } catch (e) {
-        print("error $e");
-        return false;
-      }
-      print("Successfully added $symbol, $name, $quantity,$costPrice");
+    } catch (e) {
+      error = e;
     }
+    setState(() {});
     database.close();
     return true;
   }
@@ -155,11 +163,12 @@ class _AddState extends State<Add> {
             });
             double quantity = double.tryParse(_stockQty.text);
             double costPrice = double.tryParse(_stockRealPrice.text);
+            print('$quantity, $costPrice');
             if (quantity == null || costPrice == null) {
             } else {
               response = await saveOrEditdata(
                   chosenSymbol, chosenName, quantity, costPrice);
-              print(response);
+              print('response $response');
               if (response) {
                 Navigator.of(context).pop(['yo']);
               } else {
@@ -174,7 +183,9 @@ class _AddState extends State<Add> {
                     ],
                     backgroundColor: Color.fromRGBO(42, 42, 42, 1),
                     content: Text(
-                      "Please enter Unique And valid Data",
+                      error == ''
+                          ? "Please enter Unique And valid Data"
+                          : error,
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 22,
@@ -190,7 +201,7 @@ class _AddState extends State<Add> {
           },
           child: Icon(Icons.done),
         ),
-        floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+        floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
         body: Stack(
           children: [
             SafeArea(
@@ -201,101 +212,103 @@ class _AddState extends State<Add> {
                 // color: Colors.orange,
                 child: Form(
                   key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      TextField(
-                        autofocus: true,
-                        autocorrect: false,
-                        cursorColor: Colors.white,
-                        style: TextStyle(
-                          color: Colors.white,
-                        ),
-                        controller: _stockName,
-                        decoration: InputDecoration(
-                          alignLabelWithHint: true,
-                          hintText: "Enter Name",
-                          hintStyle: TextStyle(color: Colors.white),
-                          focusedBorder: UnderlineInputBorder(
-                            borderSide: BorderSide(
-                              color: Color.fromRGBO(159, 105, 46, 1),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        TextField(
+                          autofocus: true,
+                          autocorrect: false,
+                          cursorColor: Colors.white,
+                          style: TextStyle(
+                            color: Colors.white,
+                          ),
+                          controller: _stockName,
+                          decoration: InputDecoration(
+                            alignLabelWithHint: true,
+                            hintText: "Enter Name",
+                            hintStyle: TextStyle(color: Colors.white),
+                            focusedBorder: UnderlineInputBorder(
+                              borderSide: BorderSide(
+                                color: Color.fromRGBO(159, 105, 46, 1),
+                              ),
                             ),
                           ),
+                          onChanged: (value) {
+                            String finalValue = value.trim();
+                            print(finalValue.isEmpty);
+                            if (finalValue.isNotEmpty)
+                              guessStock(value);
+                            else
+                              setState(() {
+                                guesses = [];
+                              });
+                          },
                         ),
-                        onChanged: (value) {
-                          String finalValue = value.trim();
-                          print(finalValue.isEmpty);
-                          if (finalValue.isNotEmpty)
-                            guessStock(value);
-                          else
-                            setState(() {
-                              guesses = [];
-                            });
-                        },
-                      ),
-                      guesses.isNotEmpty
-                          ? Container(
-                              decoration: BoxDecoration(
-                                color: Colors.black45,
-                                borderRadius: BorderRadius.only(
-                                  bottomLeft: Radius.circular(20),
-                                  bottomRight: Radius.circular(20),
+                        guesses.isNotEmpty
+                            ? Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.black45,
+                                  borderRadius: BorderRadius.only(
+                                    bottomLeft: Radius.circular(20),
+                                    bottomRight: Radius.circular(20),
+                                  ),
                                 ),
-                              ),
-                              constraints: BoxConstraints(
-                                maxHeight:
-                                    MediaQuery.of(context).size.height * .5,
-                              ),
-                              child: guessCard(),
-                            )
-                          : Container(),
-                      SizedBox(
-                        height: 30,
-                      ),
-                      TextField(
-                        focusNode: qtyNode,
-                        autocorrect: false,
-                        keyboardType: TextInputType.number,
-                        cursorColor: Colors.white,
-                        style: TextStyle(
-                          color: Colors.white,
+                                constraints: BoxConstraints(
+                                  maxHeight:
+                                      MediaQuery.of(context).size.height * .5,
+                                ),
+                                child: guessCard(),
+                              )
+                            : Container(),
+                        SizedBox(
+                          height: 30,
                         ),
-                        controller: _stockQty,
-                        decoration: InputDecoration(
-                          alignLabelWithHint: true,
-                          hintText: "Enter Quantity",
-                          hintStyle: TextStyle(color: Colors.white),
-                          focusedBorder: UnderlineInputBorder(
-                            borderSide: BorderSide(
-                              color: Color.fromRGBO(159, 105, 46, 1),
+                        TextField(
+                          focusNode: qtyNode,
+                          autocorrect: false,
+                          keyboardType: TextInputType.number,
+                          cursorColor: Colors.white,
+                          style: TextStyle(
+                            color: Colors.white,
+                          ),
+                          controller: _stockQty,
+                          decoration: InputDecoration(
+                            alignLabelWithHint: true,
+                            hintText: "Enter Quantity",
+                            hintStyle: TextStyle(color: Colors.white),
+                            focusedBorder: UnderlineInputBorder(
+                              borderSide: BorderSide(
+                                color: Color.fromRGBO(159, 105, 46, 1),
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      SizedBox(
-                        height: 30,
-                      ),
-                      TextField(
-                        focusNode: cpNode,
-                        autocorrect: false,
-                        keyboardType: TextInputType.number,
-                        cursorColor: Colors.white,
-                        style: TextStyle(
-                          color: Colors.white,
+                        SizedBox(
+                          height: 30,
                         ),
-                        controller: _stockRealPrice,
-                        decoration: InputDecoration(
-                          alignLabelWithHint: true,
-                          hintText: "Enter Cost Price",
-                          hintStyle: TextStyle(color: Colors.white),
-                          focusedBorder: UnderlineInputBorder(
-                            borderSide: BorderSide(
-                              color: Color.fromRGBO(159, 105, 46, 1),
+                        TextField(
+                          focusNode: cpNode,
+                          autocorrect: false,
+                          keyboardType: TextInputType.number,
+                          cursorColor: Colors.white,
+                          style: TextStyle(
+                            color: Colors.white,
+                          ),
+                          controller: _stockRealPrice,
+                          decoration: InputDecoration(
+                            alignLabelWithHint: true,
+                            hintText: "Enter Cost Price",
+                            hintStyle: TextStyle(color: Colors.white),
+                            focusedBorder: UnderlineInputBorder(
+                              borderSide: BorderSide(
+                                color: Color.fromRGBO(159, 105, 46, 1),
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -314,6 +327,7 @@ class _AddState extends State<Add> {
 
   Widget guessCard() {
     return ListView.builder(
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       key: _listKey,
       itemCount: nameSymbol.length,
       itemBuilder: (context, index) => Column(
